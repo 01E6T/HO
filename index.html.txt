@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>表格差异比对工具</title>
+<meta name="theme-color" content="#5b4be0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="表格比对">
+<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f0f2f5; color: #1f2329; font-size: 14px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; text-align: center; margin: 8px 0 18px; }
+
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+  .card-title { font-size: 15px; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .card-title::before { content: ''; width: 4px; height: 15px; background: #5b4be0; border-radius: 2px; }
+
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .upload-card { border: 2px dashed #d0d3dc; border-radius: 10px; padding: 18px 14px; cursor: pointer; transition: .2s; text-align: center; display: block; }
+  .upload-card:hover { border-color: #5b4be0; background: #f7f6ff; }
+  .upload-card.loaded { border-style: solid; border-color: #22c55e; background: #f0fdf4; }
+  .uc-title { font-weight: 600; margin-bottom: 6px; }
+  .uc-name { color: #8a8f99; font-size: 12px; word-break: break-all; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-left: 4px; }
+  .tag-base { background: #e8f0ff; color: #2b6cff; }
+  .tag-cmp { background: #fff0e8; color: #ff7a2b; }
+
+  .field { margin-bottom: 14px; }
+  .field > label { display: block; font-weight: 500; margin-bottom: 8px; }
+  .field select, .field input[type=number] { padding: 6px 10px; border: 1px solid #d0d3dc; border-radius: 6px; font-size: 14px; outline: none; background: #fff; }
+  .field input[type=number] { width: 90px; }
+  .inline-fields { display: flex; gap: 18px; flex-wrap: wrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border: 1px solid #d0d3dc; border-radius: 999px; cursor: pointer; user-select: none; font-size: 13px; background: #fff; }
+  .chip input { display: none; }
+  .chip.on { background: #eef0ff; border-color: #5b4be0; color: #4b3fd0; font-weight: 500; }
+  .chip.on::before { content: '✓'; font-size: 12px; }
+
+  .btn { padding: 9px 22px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; background: #5b4be0; color: #fff; }
+  .btn:hover { background: #4a3bd0; }
+  .btn-ghost { background: #fff; color: #5b4be0; border: 1px solid #5b4be0; }
+  .btn-ghost:hover { background: #f3f1ff; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); }
+  .sw-same { background: #FF00FF; }
+  .sw-red { background: #FF0000; }
+  .sw-yellow { background: #FFFF00; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
+  .stat .k { color: #8a8f99; font-size: 12px; margin-bottom: 4px; }
+  .stat .v { font-size: 20px; font-weight: 700; }
+  .stat.add .v { color: #FF0000; }
+  .stat.del .v { color: #d4a000; }
+  .stat.same .v { color: #c000c0; }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 7px 16px; border: 1px solid #d0d3dc; background: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .tab.active { background: #5b4be0; color: #fff; border-color: #5b4be0; }
+
+  .table-wrap { overflow: auto; max-height: 70vh; border: 1px solid #e5e7eb; border-radius: 8px; }
+  table.cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; white-space: nowrap; }
+  table.cmp th, table.cmp td { border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  table.cmp th { background: #f5f6fa; position: sticky; top: 0; z-index: 2; font-weight: 600; }
+  table.cmp td.rowno { background: #f5f6fa; color: #8a8f99; font-size: 12px; text-align: center; position: sticky; left: 0; z-index: 1; }
+  table.cmp th.rowno-h { position: sticky; left: 0; z-index: 3; }
+
+  table.cmp td.c-same, table.sbs td.c-same { background: #FF00FF; color: #000; }
+  table.cmp td.c-red,  table.sbs td.c-red  { background: #FF0000; color: #fff; }
+  table.cmp td.c-yellow, table.sbs td.c-yellow { background: #FFFF00; color: #000; }
+
+  table.sbs { border-collapse: separate; border-spacing: 0; font-size: 13px; white-space: nowrap; }
+  table.sbs th, table.sbs td { border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  table.sbs th { background: #f5f6fa; position: sticky; top: 27px; z-index: 2; font-weight: 600; }
+  table.sbs th.sbs-group { background: #e8f0ff; color: #2b6cff; text-align: center; top: 0; }
+  table.sbs th.sbs-group.t2 { background: #fff0e8; color: #ff7a2b; }
+
+  table.rec { border-collapse: separate; border-spacing: 0; font-size: 13px; width: 100%; }
+  table.rec th, table.rec td { border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; }
+  table.rec th { background: #f5f6fa; font-weight: 600; position: sticky; top: 0; z-index: 2; }
+  .badge { padding: 1px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+  .badge-add { background: #ffe5e5; color: #d00; }
+  .badge-del { background: #fff7cc; color: #a08000; }
+  .badge-same { background: #fbe0fb; color: #b00bb0; }
+  .badge-chg { background: #e8f0ff; color: #2b6cff; }
+
+  .hint { color: #8a8f99; font-size: 12px; margin-top: 8px; line-height: 1.6; }
+
+  .pair-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #eee; }
+  .pair-item:last-child { border-bottom: none; }
+  .pair-idx { color: #8a8f99; width: 24px; text-align: center; font-size: 12px; }
+  .pair-sel1, .pair-sel2 { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid #d0d3dc; border-radius: 6px; font-size: 13px; background: #fff; outline: none; }
+  .pair-sel1:focus, .pair-sel2:focus { border-color: #5b4be0; }
+  .pair-arrow { color: #8a8f99; }
+  .pair-del { background: transparent; border: none; color: #cc0000; cursor: pointer; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+  .pair-del:hover { background: #ffe5e5; }
+
+  .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .preview-title { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  .preview-title .cnt-sel { color: #5b4be0; }
+  .preview-title .cnt-match { color: #22a06b; }
+  .preview-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+  .global-search { flex: 1; min-width: 0; padding: 5px 10px; border: 1px solid #d0d3dc; border-radius: 6px; font-size: 12px; outline: none; }
+  .global-search:focus { border-color: #5b4be0; }
+  .mini-btn { padding: 3px 10px; border: 1px solid #d0d3dc; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .mini-btn:hover { border-color: #5b4be0; color: #5b4be0; }
+  .preview-table-wrap { max-height: 400px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+  table.ptable { border-collapse: separate; border-spacing: 0; font-size: 12px; white-space: nowrap; width: max-content; min-width: 100%; }
+  table.ptable th, table.ptable td { padding: 4px 8px; border-bottom: 1px solid #f0f1f5; border-right: 1px solid #f5f6fa; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  table.ptable thead tr.hdr-row th { background: #f5f6fa; font-weight: 600; position: sticky; top: 0; z-index: 2; user-select: none; padding: 5px 8px; }
+  table.ptable thead tr.filter-row th { background: #fafafa; position: sticky; top: 27px; z-index: 2; padding: 3px 3px; }
+  table.ptable th.corner, table.ptable th.filter-spacer { background: #f5f6fa; z-index: 3; }
+  table.ptable th.pt-hdr { cursor: pointer; }
+  table.ptable th.pt-hdr.on { background: #eef0ff; color: #4b3fd0; box-shadow: inset 0 -2px 0 #5b4be0; }
+  table.ptable th.pt-hdr.is-key::after { content: '🔑'; margin-left: 4px; font-size: 10px; }
+  table.ptable th.pt-hdr.dim { color: #aaa; background: #fafafa; }
+  table.ptable td.dim { color: #bbb; }
+  table.ptable th.pt-check, table.ptable td.pt-check { width: 32px; text-align: center; position: sticky; left: 0; background: #f5f6fa; z-index: 1; }
+  table.ptable thead tr.hdr-row th.pt-check { z-index: 3; }
+  table.ptable td.pt-check input { cursor: pointer; }
+  .fc-inner { display: flex; gap: 2px; align-items: center; }
+  .fc-inner .filter-input { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid #d0d3dc; border-radius: 4px; font-size: 12px; outline: none; background: #fff; }
+  .fc-inner .filter-input:focus { border-color: #5b4be0; }
+  .filter-btn { flex-shrink: 0; padding: 2px 5px; font-size: 10px; border: 1px solid #d0d3dc; border-radius: 4px; background: #fff; cursor: pointer; color: #888; }
+  .filter-btn.active { background: #5b4be0; color: #fff; border-color: #5b4be0; }
+
+  .vf-pop { position: fixed; z-index: 9999; width: 250px; max-height: 420px; background: #fff;
+            border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.18); border: 1px solid #e5e7eb;
+            display: flex; flex-direction: column; font-size: 13px; }
+  .vf-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #eee; font-weight: 600; }
+  .vf-close { border: none; background: none; cursor: pointer; font-size: 14px; color: #888; }
+  .vf-actions { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #eee; }
+  .vf-actions button { flex: 1; padding: 4px 6px; border: 1px solid #d0d3dc; border-radius: 4px; background: #fff; font-size: 12px; cursor: pointer; }
+  .vf-apply { background: #5b4be0 !important; color: #fff !important; border-color: #5b4be0 !important; }
+  .vf-search { margin: 6px 10px; padding: 4px 8px; border: 1px solid #d0d3dc; border-radius: 4px; font-size: 12px; outline: none; }
+  .vf-list { flex: 1; overflow-y: auto; padding: 4px 6px 8px; }
+  .vf-item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+  .vf-item:hover { background: #f5f6fa; }
+  .vf-item input { cursor: pointer; }
+  .vf-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vf-count { color: #aaa; font-size: 11px; }
+
+  .result-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 10px; background: #f7f8fa; border-radius: 8px; }
+  .rs-input { padding: 6px 10px; border: 1px solid #d0d3dc; border-radius: 6px; font-size: 13px; outline: none; min-width: 200px; }
+  .rs-input:focus { border-color: #5b4be0; }
+  .rs-select { padding: 6px 10px; border: 1px solid #d0d3dc; border-radius: 6px; font-size: 13px; outline: none; background: #fff; }
+  .rs-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; }
+  .rs-info { color: #8a8f99; font-size: 12px; margin-left: auto; }
+
+  @media (max-width: 900px) { .preview-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .upload-grid { grid-template-columns: 1fr; } .wrap { padding: 10px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>表格差异比对工具</h1>
+
+  <!-- ① 导入 -->
+  <div class="card">
+    <h2 class="card-title">① 导入两个表格</h2>
+    <div class="upload-grid">
+      <label class="upload-card" id="card1">
+        <input type="file" id="file1" accept=".xlsx,.xls,.csv" hidden>
+        <div class="uc-title">表格1 <span class="tag tag-base">基准</span></div>
+        <div class="uc-name" id="name1">点击选择文件（xlsx / xls / csv）</div>
+      </label>
+      <label class="upload-card" id="card2">
+        <input type="file" id="file2" accept=".xlsx,.xls,.csv" hidden>
+        <div class="uc-title">表格2 <span class="tag tag-cmp">对比</span></div>
+        <div class="uc-name" id="name2">点击选择文件（xlsx / xls / csv）</div>
+      </label>
+    </div>
+  </div>
+
+  <!-- ② 基础设置 -->
+  <div class="card" id="settingsCard" hidden>
+    <h2 class="card-title">② 基础设置</h2>
+    <div class="inline-fields">
+      <div class="field"><label>表格1 工作表</label><select id="sheet1Sel"></select></div>
+      <div class="field"><label>表格2 工作表</label><select id="sheet2Sel"></select></div>
+      <div class="field"><label>表头所在行</label><input type="number" id="headerRow" value="1" min="1"></div>
+    </div>
+    <div class="field">
+      <label>主键列（用于判定两表同一行，可多选）</label>
+      <div class="chips" id="keyChips"></div>
+    </div>
+  </div>
+
+  <!-- ③ 选择对比范围 -->
+  <div class="card" id="detailCard" hidden>
+    <h2 class="card-title">③ 选择对比范围</h2>
+
+    <div class="field">
+      <label>对比列配对（表格1列 → 表格2列）</label>
+      <div class="hint" style="margin-top:0;margin-bottom:8px">默认按列名自动配对，可手动调整；点击下方预览表格的列头可快速添加/移除。</div>
+      <div id="pairList"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-ghost" id="btnAddPair">+ 添加对比列</button>
+        <button class="btn btn-ghost" id="btnAutoPair">按列名重新自动配对</button>
+        <button class="btn btn-ghost" id="btnClearPair">清空配对</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>筛选 + 勾选参与对比的行</label>
+      <div class="hint" style="margin-top:0;margin-bottom:8px">
+        每列下方筛选框：包含匹配；▾ 按钮：按该列的具体值多选；顶部搜索：跨列全局搜索。<br>
+        <b>只有同时命中所有筛选条件、且被勾选的行</b>才会参与比对。
+      </div>
+      <div class="preview-grid">
+        <div>
+          <div class="preview-title">表格1 · 已选 <span class="cnt-sel" id="selCount1">0</span> / 匹配 <span class="cnt-match" id="matchCount1">0</span> / 共 <span id="totalCount1">0</span> 行</div>
+          <div class="preview-tools">
+            <input type="text" class="global-search" id="globalSearch1" data-side="1" placeholder="🔍 全局搜索表格1">
+            <button class="mini-btn" data-side="1" data-act="clear-filter">清除筛选</button>
+          </div>
+          <div class="btn-row" style="margin-bottom:6px">
+            <button class="mini-btn" data-side="1" data-act="all">全选可见</button>
+            <button class="mini-btn" data-side="1" data-act="none">清空可见</button>
+            <button class="mini-btn" data-side="1" data-act="invert">反选可见</button>
+          </div>
+          <div class="preview-table-wrap" id="preview1"></div>
+        </div>
+        <div>
+          <div class="preview-title">表格2 · 已选 <span class="cnt-sel" id="selCount2">0</span> / 匹配 <span class="cnt-match" id="matchCount2">0</span> / 共 <span id="totalCount2">0</span> 行</div>
+          <div class="preview-tools">
+            <input type="text" class="global-search" id="globalSearch2" data-side="2" placeholder="🔍 全局搜索表格2">
+            <button class="mini-btn" data-side="2" data-act="clear-filter">清除筛选</button>
+          </div>
+          <div class="btn-row" style="margin-bottom:6px">
+            <button class="mini-btn" data-side="2" data-act="all">全选可见</button>
+            <button class="mini-btn" data-side="2" data-act="none">清空可见</button>
+            <button class="mini-btn" data-side="2" data-act="invert">反选可见</button>
+          </div>
+          <div class="preview-table-wrap" id="preview2"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn" id="btnCompare">开始比对</button>
+      <button class="btn btn-ghost" id="btnSwap">交换表格1 / 表格2</button>
+    </div>
+  </div>
+
+  <!-- ④ 结果 -->
+  <div class="card" id="resultCard" hidden>
+    <h2 class="card-title">④ 比对结果</h2>
+    <div class="stats" id="stats"></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch sw-same"></span>洋红：两表相同</div>
+      <div class="legend-item"><span class="swatch sw-red"></span>红色：表1比表2多 / 表1旧值</div>
+      <div class="legend-item"><span class="swatch sw-yellow"></span>黄色：表1比表2少 / 表2新值</div>
+      <div class="legend-item"><span style="width:16px;height:16px;border:1px dashed #bbb;display:inline-block;border-radius:3px;"></span>空白：不标注颜色</div>
+    </div>
+    <div class="result-toolbar">
+      <input type="text" class="rs-input" id="resultSearch" placeholder="筛选结果（行内容 / 主键 / 字段 / 值）...">
+      <select class="rs-select" id="resultType">
+        <option value="all">全部行</option>
+        <option value="same">仅相同行</option>
+        <option value="diff">仅差异行</option>
+        <option value="chg">仅内容变化</option>
+        <option value="add">仅表1比表2多</option>
+        <option value="del">仅表1比表2少</option>
+      </select>
+      <label class="rs-check"><input type="checkbox" id="sbsDiffOnly"> 并排仅显示差异</label>
+      <span class="rs-info" id="resultInfo"></span>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="t1">表格1（标记）</button>
+      <button class="tab" data-tab="t2">表格2（标记）</button>
+      <button class="tab" data-tab="sbs">并排对比</button>
+      <button class="tab" data-tab="rec">差异记录表</button>
+    </div>
+    <div id="pane-t1"></div>
+    <div id="pane-t2" hidden></div>
+    <div id="pane-sbs" hidden></div>
+    <div id="pane-rec" hidden></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn" id="btnExport">导出对比报告（Excel）</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== 状态 ===================== */
+const S = {
+  wb1: null, wb2: null,
+  sheet1: '', sheet2: '',
+  name1: '', name2: '',
+  t1: null, t2: null,
+  pairs: [],
+  sel1: new Set(), sel2: new Set(),
+  kw1: {}, set1: {}, global1: '',
+  kw2: {}, set2: {}, global2: '',
+  result: null,
+  ui: { resultSearch: '', resultType: 'all', sbsDiffOnly: false }
+};
+const $ = id => document.getElementById(id);
+
+/* ===================== 工具 ===================== */
+function norm(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function isNumeric(s) { return s !== '' && !isNaN(Number(s)); }
+function cellEqual(a, b) {
+  const sa = norm(a), sb = norm(b);
+  if (sa === sb) return true;
+  if (isNumeric(sa) && isNumeric(sb) && Number(sa) === Number(sb)) return true;
+  return false;
+}
+function keyOf(row, idxs) { return idxs.map(i => norm(row[i])).join('\u0001'); }
+function keyText(row, idxs) { return idxs.map(i => norm(row[i])).join(' | '); }
+function rowText(row, idxs) {
+  if (!idxs) return row.map(v => norm(v)).join(' | ');
+  return idxs.map(i => norm(row[i])).join(' | ');
+}
+function escHtml(s) {
+  return norm(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+function escXml(s) {
+  return norm(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+/* 关键：单侧多条件筛选 */
+function matchRow(row, side) {
+  const kw = side === 1 ? S.kw1 : S.kw2;
+  const set = side === 1 ? S.set1 : S.set2;
+  const g = side === 1 ? S.global1 : S.global2;
+  for (const ci in kw) {
+    const v = String(row[+ci] == null ? '' : row[+ci]).toLowerCase();
+    if (v.indexOf(kw[ci]) < 0) return false;
+  }
+  for (const ci in set) {
+    if (!set[ci].has(norm(row[+ci]))) return false;
+  }
+  if (g) {
+    const hit = row.some(v => String(v == null ? '' : v).toLowerCase().indexOf(g) >= 0);
+    if (!hit) return false;
+  }
+  return true;
+}
+
+/* ===================== 文件解析 ===================== */
+$('file1').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFile(f, 1); });
+$('file2').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFile(f, 2); });
+
+async function loadFile(file, side) {
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    if (side === 1) { S.wb1 = wb; S.name1 = file.name; S.sheet1 = wb.SheetNames[0]; }
+    else            { S.wb2 = wb; S.name2 = file.name; S.sheet2 = wb.SheetNames[0]; }
+    updateUploadUI(side);
+    if (S.wb1 && S.wb2) { $('settingsCard').hidden = false; fillSheetSelects(); parseBoth(false, false); }
+  } catch (err) {
+    alert('文件解析失败：' + err.message);
+  }
+}
+function updateUploadUI(side) {
+  $(side === 1 ? 'card1' : 'card2').classList.add('loaded');
+  $(side === 1 ? 'name1' : 'name2').textContent = side === 1 ? S.name1 : S.name2;
+}
+function fillSheetSelects() {
+  const s1 = $('sheet1Sel'), s2 = $('sheet2Sel');
+  s1.innerHTML = S.wb1.SheetNames.map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
+  s2.innerHTML = S.wb2.SheetNames.map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
+  s1.value = S.sheet1; s2.value = S.sheet2;
+}
+function parseSheet(wb, sheetName, headerRow) {
+  const ws = wb.Sheets[sheetName];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+  const hIdx = Math.max(0, headerRow - 1);
+  const rawHeader = aoa[hIdx] || [];
+  const headers = [], count = {};
+  rawHeader.forEach((h, i) => {
+    let name = norm(h) || ('列' + (i + 1));
+    if (count[name]) { count[name]++; name = name + '_' + count[name]; }
+    else count[name] = 1;
+    headers.push(name);
+  });
+  const rows = aoa.slice(hIdx + 1)
+    .filter(r => r.some(c => norm(c) !== ''))
+    .map(r => {
+      const arr = [];
+      for (let i = 0; i < headers.length; i++) arr.push(r[i] === undefined || r[i] === null ? '' : r[i]);
+      return arr;
+    });
+  return { headers, rows };
+}
+
+function parseBoth(keepSelection, keepFilters) {
+  const hr = Math.max(1, parseInt($('headerRow').value, 10) || 1);
+  S.sheet1 = $('sheet1Sel').value;
+  S.sheet2 = $('sheet2Sel').value;
+
+  const oldSel1 = S.sel1, oldSel2 = S.sel2, oldPairs = S.pairs;
+
+  S.t1 = parseSheet(S.wb1, S.sheet1, hr);
+  S.t2 = parseSheet(S.wb2, S.sheet2, hr);
+
+  if (!keepFilters) {
+    S.kw1 = {}; S.set1 = {}; S.global1 = '';
+    S.kw2 = {}; S.set2 = {}; S.global2 = '';
+    const g1 = $('globalSearch1'), g2 = $('globalSearch2');
+    if (g1) g1.value = ''; if (g2) g2.value = '';
+  }
+  buildKeyChips();
+
+  if (keepSelection) {
+    S.sel1 = oldSel1; S.sel2 = oldSel2; S.pairs = oldPairs;
+  } else {
+    autoPair();
+    S.sel1 = new Set(S.t1.rows.map((_, i) => i));
+    S.sel2 = new Set(S.t2.rows.map((_, i) => i));
+  }
+
+  $('detailCard').hidden = false;
+  renderPairList();
+  renderPreview(1);
+  renderPreview(2);
+}
+
+['sheet1Sel', 'sheet2Sel', 'headerRow'].forEach(id =>
+  $(id).addEventListener('change', () => parseBoth(false, false)));
+
+/* ===================== 主键 chips ===================== */
+function commonHeaders() {
+  if (!S.t1 || !S.t2) return [];
+  return S.t1.headers.filter(h => S.t2.headers.indexOf(h) >= 0);
+}
+function getChecked(group) {
+  return Array.from(document.querySelectorAll(`input[data-group="${group}"]:checked`)).map(i => i.dataset.name);
+}
+function buildKeyChips() {
+  const common = commonHeaders();
+  const box = $('keyChips');
+  const prevKey = getChecked('key');
+  box.innerHTML = '';
+  if (!common.length) { box.innerHTML = '<span class="hint">两个表格没有同名列，请检查表头行设置。</span>'; return; }
+  common.forEach((h, i) => {
+    const label = document.createElement('label');
+    label.className = 'chip';
+    const checked = prevKey.length ? prevKey.indexOf(h) >= 0 : i === 0;
+    if (checked) label.classList.add('on');
+    label.textContent = h;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = checked;
+    cb.dataset.group = 'key'; cb.dataset.name = h;
+    cb.addEventListener('change', () => {
+      label.classList.toggle('on', cb.checked);
+      renderPreview(1); renderPreview(2);
+    });
+    label.appendChild(cb);
+    box.appendChild(label);
+  });
+}
+
+/* ===================== 列配对 ===================== */
+function autoPair() {
+  S.pairs = [];
+  const h1 = S.t1.headers, h2 = S.t2.headers;
+  const used2 = new Set();
+  h1.forEach((name, i1) => {
+    const i2 = h2.indexOf(name);
+    if (i2 >= 0 && !used2.has(i2)) { S.pairs.push({ i1, i2 }); used2.add(i2); }
+  });
+}
+function addColumnIfMissing(side, ci) {
+  if (S.pairs.some(p => (side === 1 ? p.i1 : p.i2) === ci)) return;
+  const myHeaders    = side === 1 ? S.t1.headers : S.t2.headers;
+  const otherHeaders = side === 1 ? S.t2.headers : S.t1.headers;
+  const usedOther = new Set(S.pairs.map(p => side === 1 ? p.i2 : p.i1));
+  const name = myHeaders[ci];
+  let otherIdx = otherHeaders.indexOf(name);
+  if (otherIdx >= 0 && usedOther.has(otherIdx)) otherIdx = -1;
+  if (otherIdx < 0) {
+    for (let i = 0; i < otherHeaders.length; i++) if (!usedOther.has(i)) { otherIdx = i; break; }
+  }
+  if (otherIdx < 0) otherIdx = 0;
+  if (side === 1) S.pairs.push({ i1: ci, i2: otherIdx });
+  else            S.pairs.push({ i1: otherIdx, i2: ci });
+}
+function toggleColumn(side, ci) {
+  const idx = S.pairs.findIndex(p => (side === 1 ? p.i1 : p.i2) === ci);
+  if (idx >= 0) S.pairs.splice(idx, 1); else addColumnIfMissing(side, ci);
+  renderPairList(); renderPreview(1); renderPreview(2);
+}
+function renderPairList() {
+  const box = $('pairList');
+  if (!S.pairs.length) { box.innerHTML = '<div class="hint">暂无对比列，请添加</div>'; return; }
+  box.innerHTML = S.pairs.map((p, idx) => `
+    <div class="pair-item" data-idx="${idx}">
+      <span class="pair-idx">${idx + 1}</span>
+      <select class="pair-sel1">${S.t1.headers.map((h, i) =>
+        `<option value="${i}" ${i === p.i1 ? 'selected' : ''}>${escHtml(h)}</option>`).join('')}</select>
+      <span class="pair-arrow">→</span>
+      <select class="pair-sel2">${S.t2.headers.map((h, i) =>
+        `<option value="${i}" ${i === p.i2 ? 'selected' : ''}>${escHtml(h)}</option>`).join('')}</select>
+      <button class="pair-del">删除</button>
+    </div>`).join('');
+
+  box.querySelectorAll('.pair-sel1').forEach(sel => sel.addEventListener('change', () => {
+    S.pairs[+sel.closest('.pair-item').dataset.idx].i1 = +sel.value;
+    renderPreview(1); renderPreview(2);
+  }));
+  box.querySelectorAll('.pair-sel2').forEach(sel => sel.addEventListener('change', () => {
+    S.pairs[+sel.closest('.pair-item').dataset.idx].i2 = +sel.value;
+    renderPreview(1); renderPreview(2);
+  }));
+  box.querySelectorAll('.pair-del').forEach(btn => btn.addEventListener('click', () => {
+    S.pairs.splice(+btn.closest('.pair-item').dataset.idx, 1);
+    renderPairList(); renderPreview(1); renderPreview(2);
+  }));
+}
+
+/* ===================== 行预览 ===================== */
+let vfPop = null;
+function closeVfPop() { if (vfPop) { vfPop.remove(); vfPop = null; } }
+
+function renderPreview(side) {
+  const t = side === 1 ? S.t1 : S.t2;
+  const sel = side === 1 ? S.sel1 : S.sel2;
+  const kw = side === 1 ? S.kw1 : S.kw2;
+  const set = side === 1 ? S.set1 : S.set2;
+  const box = $(side === 1 ? 'preview1' : 'preview2');
+  const pairCols = new Set(S.pairs.map(p => side === 1 ? p.i1 : p.i2));
+  const keyNames = getChecked('key');
+
+  let html = '<table class="ptable"><thead><tr class="hdr-row">';
+  html += '<th class="pt-check corner"><input type="checkbox" title="全选列"></th>';
+  t.headers.forEach((h, i) => {
+    const on = pairCols.has(i) ? 'on' : '';
+    const isKey = keyNames.indexOf(h) >= 0 ? 'is-key' : '';
+    const dim = pairCols.has(i) ? '' : 'dim';
+    html += `<th class="pt-hdr ${on} ${isKey} ${dim}" data-col="${i}"
+      title="点击 ${pairCols.has(i) ? '取消' : '添加'}对比列">${escHtml(h)}</th>`;
+  });
+  html += '</tr><tr class="filter-row">';
+  html += '<th class="pt-check filter-spacer"></th>';
+  t.headers.forEach((h, i) => {
+    const kVal = kw[i] || '';
+    const hasSet = set[i] ? 'active' : '';
+    const kEsc = String(kVal).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    html += `<th class="filter-cell">
+      <div class="fc-inner">
+        <input type="text" class="filter-input" data-col="${i}" value="${kEsc}" placeholder="筛选">
+        <button class="filter-btn ${hasSet}" data-col="${i}" title="按值筛选">▾</button>
+      </div></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  t.rows.forEach((row, ri) => {
+    const checked = sel.has(ri) ? 'checked' : '';
+    html += `<tr data-row="${ri}">`;
+    html += `<td class="pt-check"><input type="checkbox" data-row="${ri}" ${checked}></td>`;
+    row.forEach((v, ci) => {
+      const dim = pairCols.has(ci) ? '' : 'dim';
+      html += `<td class="${dim}">${escHtml(v)}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+
+  box.querySelectorAll('.pt-hdr').forEach(th =>
+    th.addEventListener('click', () => toggleColumn(side, +th.dataset.col)));
+
+  const allColCb = box.querySelector('.pt-check.corner input');
+  if (allColCb) {
+    allColCb.checked = pairCols.size === t.headers.length && t.headers.length > 0;
+    allColCb.addEventListener('change', e => {
+      if (e.target.checked) t.headers.forEach((_, ci) => addColumnIfMissing(side, ci));
+      else {
+        const idxs = new Set(t.headers.map((_, i) => i));
+        S.pairs = S.pairs.filter(p => !idxs.has(side === 1 ? p.i1 : p.i2));
+      }
+      renderPairList(); renderPreview(1); renderPreview(2);
+    });
+  }
+
+  box.querySelectorAll('input[data-row]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const ri = +cb.dataset.row;
+      if (cb.checked) sel.add(ri); else sel.delete(ri);
+      applyFilterVisibility(side);
+    });
+  });
+
+  box.querySelectorAll('.filter-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const ci = +inp.dataset.col;
+      const val = inp.value.toLowerCase().trim();
+      if (val) kw[ci] = val; else delete kw[ci];
+      applyFilterVisibility(side);
+    });
+  });
+
+  box.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      openValueFilter(side, +btn.dataset.col, btn);
+    });
+  });
+
+  applyFilterVisibility(side);
+}
+
+function openValueFilter(side, ci, anchorEl) {
+  closeVfPop();
+  const t = side === 1 ? S.t1 : S.t2;
+  const setMap = side === 1 ? S.set1 : S.set2;
+  const cur = setMap[ci] || null;
+
+  const vals = new Map();
+  t.rows.forEach(r => {
+    const v = norm(r[ci]);
+    vals.set(v, (vals.get(v) || 0) + 1);
+  });
+  const arr = [...vals.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'zh'));
+  const selected = new Set(cur ? [...cur] : arr.map(a => a[0]));
+
+  const pop = document.createElement('div');
+  pop.className = 'vf-pop';
+  pop.innerHTML = `
+    <div class="vf-head"><span>「${escHtml(t.headers[ci])}」值筛选</span><button class="vf-close">✕</button></div>
+    <div class="vf-actions"><button class="vf-all">全选</button><button class="vf-none">清空</button><button class="vf-apply">应用</button></div>
+    <input type="text" class="vf-search" placeholder="搜索值...">
+    <div class="vf-list"></div>`;
+  document.body.appendChild(pop);
+  vfPop = pop;
+
+  const rect = anchorEl.getBoundingClientRect();
+  const w = 250;
+  pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+  pop.style.top = Math.min(rect.bottom + 4, window.innerHeight - 420) + 'px';
+
+  const listEl = pop.querySelector('.vf-list');
+  const searchEl = pop.querySelector('.vf-search');
+
+  function renderList(kwVal) {
+    const k = (kwVal || '').toLowerCase();
+    const filtered = arr.map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => !k || String(item[0]).toLowerCase().indexOf(k) >= 0);
+    if (!filtered.length) { listEl.innerHTML = '<div class="hint" style="padding:10px">无匹配值</div>'; return; }
+    listEl.innerHTML = filtered.map(({ item: [v, c], idx }) => {
+      const checked = selected.has(v) ? 'checked' : '';
+      const display = v === '' ? '<em style="color:#999">(空白)</em>' : escHtml(v);
+      return `<label class="vf-item"><input type="checkbox" data-idx="${idx}" ${checked}>
+        <span>${display}</span><span class="vf-count">${c}</span></label>`;
+    }).join('');
+    listEl.querySelectorAll('input').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const v = arr[+cb.dataset.idx][0];
+        if (cb.checked) selected.add(v); else selected.delete(v);
+      });
+    });
+  }
+  renderList('');
+  searchEl.addEventListener('input', () => renderList(searchEl.value.trim()));
+
+  pop.querySelector('.vf-close').addEventListener('click', closeVfPop);
+  pop.querySelector('.vf-all').addEventListener('click', () => {
+    arr.forEach(([v]) => selected.add(v)); renderList(searchEl.value.trim());
+  });
+  pop.querySelector('.vf-none').addEventListener('click', () => {
+    selected.clear(); renderList(searchEl.value.trim());
+  });
+  pop.querySelector('.vf-apply').addEventListener('click', () => {
+    if (selected.size === arr.length) delete setMap[ci];
+    else setMap[ci] = new Set(selected);
+    closeVfPop();
+    renderPreview(side);
+  });
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', function onDoc(evt) {
+      if (!pop.contains(evt.target)) { closeVfPop(); document.removeEventListener('mousedown', onDoc); }
+    });
+  }, 0);
+}
+
+function applyFilterVisibility(side) {
+  const t = side === 1 ? S.t1 : S.t2;
+  const sel = side === 1 ? S.sel1 : S.sel2;
+  const box = $(side === 1 ? 'preview1' : 'preview2');
+  const tbody = box.querySelector('tbody');
+  let match = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const ri = +tr.dataset.row;
+    const m = matchRow(t.rows[ri], side);
+    tr.style.display = m ? '' : 'none';
+    if (m) match++;
+  });
+  $(side === 1 ? 'selCount1' : 'selCount2').textContent = sel.size;
+  $(side === 1 ? 'matchCount1' : 'matchCount2').textContent = match;
+  $(side === 1 ? 'totalCount1' : 'totalCount2').textContent = t.rows.length;
+}
+
+/* ===================== 按钮 ===================== */
+document.querySelectorAll('.mini-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const side = +btn.dataset.side;
+    const act = btn.dataset.act;
+    const t = side === 1 ? S.t1 : S.t2;
+    const sel = side === 1 ? S.sel1 : S.sel2;
+
+    if (act === 'clear-filter') {
+      if (side === 1) { S.kw1 = {}; S.set1 = {}; S.global1 = ''; $('globalSearch1').value = ''; }
+      else { S.kw2 = {}; S.set2 = {}; S.global2 = ''; $('globalSearch2').value = ''; }
+      renderPreview(side);
+      return;
+    }
+
+    t.rows.forEach((row, ri) => {
+      if (!matchRow(row, side)) return;
+      if (act === 'all') sel.add(ri);
+      else if (act === 'none') sel.delete(ri);
+      else if (act === 'invert') { if (sel.has(ri)) sel.delete(ri); else sel.add(ri); }
+    });
+
+    const box = $(side === 1 ? 'preview1' : 'preview2');
+    box.querySelectorAll('input[data-row]').forEach(cb => cb.checked = sel.has(+cb.dataset.row));
+    applyFilterVisibility(side);
+  });
+});
+
+['globalSearch1', 'globalSearch2'].forEach(id => {
+  const el = $(id); if (!el) return;
+  el.addEventListener('input', () => {
+    const side = +el.dataset.side;
+    if (side === 1) S.global1 = el.value.trim().toLowerCase();
+    else S.global2 = el.value.trim().toLowerCase();
+    applyFilterVisibility(side);
+  });
+});
+
+$('btnAddPair').addEventListener('click', () => {
+  const used1 = new Set(S.pairs.map(p => p.i1));
+  const used2 = new Set(S.pairs.map(p => p.i2));
+  let i1 = 0; for (let i = 0; i < S.t1.headers.length; i++) if (!used1.has(i)) { i1 = i; break; }
+  let i2 = 0; for (let i = 0; i < S.t2.headers.length; i++) if (!used2.has(i)) { i2 = i; break; }
+  S.pairs.push({ i1, i2 });
+  renderPairList(); renderPreview(1); renderPreview(2);
+});
+$('btnAutoPair').addEventListener('click', () => { autoPair(); renderPairList(); renderPreview(1); renderPreview(2); });
+$('btnClearPair').addEventListener('click', () => { S.pairs = []; renderPairList(); renderPreview(1); renderPreview(2); });
+$('btnSwap').addEventListener('click', () => {
+  if (!S.wb1 || !S.wb2) return;
+  [S.wb1, S.wb2] = [S.wb2, S.wb1];
+  [S.name1, S.name2] = [S.name2, S.name1];
+  [S.sheet1, S.sheet2] = [S.sheet2, S.sheet1];
+  [S.sel1, S.sel2] = [S.sel2, S.sel1];
+  [S.kw1, S.kw2] = [S.kw2, S.kw1];
+  [S.set1, S.set2] = [S.set2, S.set1];
+  [S.global1, S.global2] = [S.global2, S.global1];
+  S.pairs = S.pairs.map(p => ({ i1: p.i2, i2: p.i1 }));
+  updateUploadUI(1); updateUploadUI(2);
+  fillSheetSelects();
+  parseBoth(true, true);
+  $('resultCard').hidden = true; S.result = null;
+});
+
+/* ===================== 比对核心 ===================== */
+$('btnCompare').addEventListener('click', doCompare);
+
+function doCompare() {
+  const keyNames = getChecked('key');
+  if (!keyNames.length) { alert('请至少选择一个主键列'); return; }
+  if (!S.pairs.length) { alert('请至少添加一对对比列'); return; }
+
+  const h1 = S.t1.headers, h2 = S.t2.headers;
+  const keyIdx1 = keyNames.map(n => h1.indexOf(n));
+  const keyIdx2 = keyNames.map(n => h2.indexOf(n));
+  if (keyIdx1.some(i => i < 0) || keyIdx2.some(i => i < 0)) { alert('主键列在两表中无法完全对应'); return; }
+
+  const matchSet1 = new Set();
+  S.t1.rows.forEach((row, ri) => { if (matchRow(row, 1)) matchSet1.add(ri); });
+  const matchSet2 = new Set();
+  S.t2.rows.forEach((row, ri) => { if (matchRow(row, 2)) matchSet2.add(ri); });
+
+  const actualSel1 = new Set([...S.sel1].filter(i => matchSet1.has(i)));
+  const actualSel2 = new Set([...S.sel2].filter(i => matchSet2.has(i)));
+
+  if (!actualSel1.size) { alert('表格1 没有参与对比的行（请检查筛选条件与勾选）'); return; }
+  if (!actualSel2.size) { alert('表格2 没有参与对比的行（请检查筛选条件与勾选）'); return; }
+
+  S.result = runCompare(S.t1, S.t2, keyIdx1, keyIdx2, S.pairs, actualSel1, actualSel2);
+  renderResult();
+}
+
+function runCompare(t1, t2, keyIdx1, keyIdx2, pairs, sel1, sel2) {
+  const marks1 = t1.rows.map(() => new Array(t1.headers.length).fill(''));
+  const marks2 = t2.rows.map(() => new Array(t2.headers.length).fill(''));
+  const records = [];
+  const summary = { total1: sel1.size, total2: sel2.size, same: 0, add: 0, del: 0, chgRows: 0, chgCells: 0 };
+  const rowPairs = [];
+
+  const idx2 = new Map();
+  t2.rows.forEach((row, i) => {
+    if (!sel2.has(i)) return;
+    const k = keyOf(row, keyIdx2);
+    if (!idx2.has(k)) idx2.set(k, []);
+    idx2.get(k).push(i);
+  });
+  const used2 = new Set();
+
+  t1.rows.forEach((r1, i1) => {
+    if (!sel1.has(i1)) return;
+    const k = keyOf(r1, keyIdx1);
+    const queue = idx2.get(k);
+    const i2 = (queue && queue.length) ? queue.shift() : undefined;
+
+    if (i2 === undefined) {
+      pairs.forEach(p => { if (norm(r1[p.i1]) !== '') marks1[i1][p.i1] = 'add'; });
+      summary.add++;
+      rowPairs.push({ i1, i2: undefined });
+      records.push({
+        type: '增加', key: keyText(r1, keyIdx1), row1: i1 + 1, row2: '',
+        field: '整行', v1: rowText(r1, pairs.map(p => p.i1)), v2: '', note: '表格1有，表格2没有'
+      });
+      return;
+    }
+
+    used2.add(i2);
+    rowPairs.push({ i1, i2 });
+    const r2 = t2.rows[i2];
+    let diffCount = 0;
+
+    pairs.forEach(p => {
+      const a = r1[p.i1], b = r2[p.i2];
+      const aEmpty = norm(a) === '';
+      const bEmpty = norm(b) === '';
+      if (cellEqual(a, b)) {
+        if (!aEmpty) marks1[i1][p.i1] = 'same';
+        if (!bEmpty) marks2[i2][p.i2] = 'same';
+      } else {
+        diffCount++;
+        if (!aEmpty) marks1[i1][p.i1] = 'chg';
+        if (!bEmpty) marks2[i2][p.i2] = 'chg';
+        records.push({
+          type: '变化', key: keyText(r1, keyIdx1), row1: i1 + 1, row2: i2 + 1,
+          field: t1.headers[p.i1] + (t1.headers[p.i1] !== t2.headers[p.i2] ? ' → ' + t2.headers[p.i2] : ''),
+          v1: a, v2: b, note: '内容不同'
+        });
+      }
+    });
+
+    if (diffCount === 0) {
+      summary.same++;
+      records.push({
+        type: '相同', key: keyText(r1, keyIdx1), row1: i1 + 1, row2: i2 + 1,
+        field: '', v1: '', v2: '', note: '整行一致'
+      });
+    } else {
+      summary.chgRows++;
+      summary.chgCells += diffCount;
+    }
+  });
+
+  t2.rows.forEach((r2, i2) => {
+    if (!sel2.has(i2) || used2.has(i2)) return;
+    pairs.forEach(p => { if (norm(r2[p.i2]) !== '') marks2[i2][p.i2] = 'del'; });
+    summary.del++;
+    rowPairs.push({ i1: undefined, i2 });
+    records.push({
+      type: '减少', key: keyText(r2, keyIdx2), row1: '', row2: i2 + 1,
+      field: '整行', v1: '', v2: rowText(r2, pairs.map(p => p.i2)), note: '表格2有，表格1没有'
+    });
+  });
+
+  return {
+    marks1, marks2, records, summary, pairs: rowPairs,
+    pairsDef: pairs.map(p => ({ i1: p.i1, i2: p.i2 })),
+    sel1, sel2
+  };
+}
+
+/* ===================== 结果筛选逻辑 ===================== */
+function rowStatus(marksRow, len) {
+  const s = { same: false, diff: false, add: false, del: false, chg: false };
+  for (let ci = 0; ci < len; ci++) {
+    const m = marksRow[ci];
+    if (m === 'same') s.same = true;
+    else if (m === 'add') { s.add = true; s.diff = true; }
+    else if (m === 'del') { s.del = true; s.diff = true; }
+    else if (m === 'chg') { s.chg = true; s.diff = true; }
+  }
+  if (!s.diff) s.same = true; // 无任何差异标记 → 视为相同行
+  return s;
+}
+function passRowFilter(s, text) {
+  const ty = S.ui.resultType;
+  if (ty === 'same' && s.diff) return false;
+  if (ty === 'diff' && !s.diff) return false;
+  if (ty === 'chg' && !s.chg) return false;
+  if (ty === 'add' && !s.add) return false;
+  if (ty === 'del' && !s.del) return false;
+  const kw = S.ui.resultSearch.toLowerCase();
+  if (kw && text.toLowerCase().indexOf(kw) < 0) return false;
+  return true;
+}
+
+/* ===================== 渲染结果 ===================== */
+function renderResult() {
+  const { result } = S;
+  $('resultCard').hidden = false;
+  const s = result.summary;
+  $('stats').innerHTML = `
+    <div class="stat"><div class="k">表格1参与行数</div><div class="v">${s.total1}</div></div>
+    <div class="stat"><div class="k">表格2参与行数</div><div class="v">${s.total2}</div></div>
+    <div class="stat same"><div class="k">相同行数</div><div class="v">${s.same}</div></div>
+    <div class="stat add"><div class="k">增加行数（表1多）</div><div class="v">${s.add}</div></div>
+    <div class="stat del"><div class="k">减少行数（表2多）</div><div class="v">${s.del}</div></div>
+    <div class="stat"><div class="k">内容变化单元格</div><div class="v">${s.chgCells}</div></div>`;
+  refreshResultPanes();
+  $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function refreshResultPanes() {
+  const { t1, t2, result } = S;
+  const { marks1, marks2, records } = result;
+  let shown = 0;
+
+  const t1html = renderCmpTable(t1, marks1, 1, result.sel1);
+  const t2html = renderCmpTable(t2, marks2, 2, result.sel2);
+  const sbsHtml = renderSbs();
+  const recHtml = renderRecords(records);
+
+  $('pane-t1').innerHTML = `<div class="table-wrap">${t1html.html}</div>`;
+  $('pane-t2').innerHTML = `<div class="table-wrap">${t2html.html}</div>`;
+  $('pane-sbs').innerHTML = `<div class="table-wrap">${sbsHtml.html}</div>`;
+  $('pane-rec').innerHTML = `<div class="table-wrap">${recHtml.html}</div>`;
+
+  shown = recHtml.count;
+  $('resultInfo').textContent = `当前筛选：${shown} 条记录 / ${records.length} 条总记录`;
+}
+
+function renderCmpTable(t, marks, side, sel) {
+  const clsMap = side === 1
+    ? { same: 'c-same', add: 'c-red', chg: 'c-red' }
+    : { same: 'c-same', del: 'c-yellow', chg: 'c-yellow' };
+
+  let html = '<table class="cmp"><thead><tr>';
+  html += '<th class="rowno-h">行号</th>';
+  t.headers.forEach(h => { html += `<th>${escHtml(h)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  t.rows.forEach((row, ri) => {
+    if (!sel.has(ri)) return;
+    const status = rowStatus(marks[ri], t.headers.length);
+    const text = row.map(v => norm(v)).join(' | ');
+    if (!passRowFilter(status, text)) return;
+    html += '<tr>';
+    html += `<td class="rowno">${ri + 1}</td>`;
+    row.forEach((v, ci) => {
+      const m = marks[ri][ci];
+      const cls = (m && norm(v) !== '') ? clsMap[m] : '';
+      html += `<td class="${cls}">${escHtml(v)}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return { html };
+}
+
+function renderSbs() {
+  const { t1, t2, result } = S;
+  const { marks1, marks2, pairsDef } = result;
+  if (!pairsDef) return { html: '' };
+
+  let html = '<table class="sbs"><thead>';
+  html += '<tr class="group-row">';
+  html += `<th class="sbs-group" colspan="${t1.headers.length}">表格1</th>`;
+  html += `<th class="sbs-group t2" colspan="${t2.headers.length}">表格2</th>`;
+  html += '</tr><tr>';
+  t1.headers.forEach(h => { html += `<th>${escHtml(h)}</th>`; });
+  t2.headers.forEach(h => { html += `<th>${escHtml(h)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  const kw = S.ui.resultSearch.toLowerCase();
+  result.pairs.forEach(pr => {
+    const row1 = pr.i1 !== undefined ? t1.rows[pr.i1] : null;
+    const row2 = pr.i2 !== undefined ? t2.rows[pr.i2] : null;
+
+    let diff = false, chg = false, add = false, del = false;
+    if (pr.i2 === undefined) { diff = true; add = true; }
+    else if (pr.i1 === undefined) { diff = true; del = true; }
+    else {
+      pairsDef.forEach(p => {
+        if (marks1[pr.i1][p.i1] === 'chg') { diff = true; chg = true; }
+      });
+    }
+
+    if (S.ui.sbsDiffOnly && !diff) return;
+
+    const ty = S.ui.resultType;
+    if (ty === 'same' && diff) return;
+    if (ty === 'diff' && !diff) return;
+    if (ty === 'chg' && !chg) return;
+    if (ty === 'add' && !add) return;
+    if (ty === 'del' && !del) return;
+
+    if (kw) {
+      const text = [
+        ...(row1 ? row1.map(v => norm(v)) : []),
+        ...(row2 ? row2.map(v => norm(v)) : [])
+      ].join(' ').toLowerCase();
+      if (text.indexOf(kw) < 0) return;
+    }
+
+    html += '<tr>';
+    t1.headers.forEach((_, ci) => {
+      const v = row1 ? row1[ci] : '';
+      let cls = '';
+      if (row1 && norm(v) !== '') {
+        const m = marks1[pr.i1][ci];
+        if (m === 'same') cls = 'c-same';
+        else if (m === 'add' || m === 'chg') cls = 'c-red';
+      }
+      html += `<td class="${cls}">${escHtml(v)}</td>`;
+    });
+    t2.headers.forEach((_, ci) => {
+      const v = row2 ? row2[ci] : '';
+      let cls = '';
+      if (row2 && norm(v) !== '') {
+        const m = marks2[pr.i2][ci];
+        if (m === 'same') cls = 'c-same';
+        else if (m === 'del' || m === 'chg') cls = 'c-yellow';
+      }
+      html += `<td class="${cls}">${escHtml(v)}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return { html };
+}
+
+function renderRecords(records) {
+  const badgeMap = { '增加': 'badge-add', '减少': 'badge-del', '相同': 'badge-same', '变化': 'badge-chg' };
+  const ty = S.ui.resultType;
+  const kw = S.ui.resultSearch.toLowerCase();
+  const typeMap = { same: '相同', chg: '变化', add: '增加', del: '减少' };
+
+  let html = '<table class="rec"><thead><tr>';
+  ['序号', '类型', '主键', '表格1行号', '表格2行号', '字段', '表格1值', '表格2值', '说明']
+    .forEach(h => { html += `<th>${h}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  let count = 0;
+  records.forEach((r, i) => {
+    if (ty !== 'all') {
+      const target = typeMap[ty];
+      if (target && r.type !== target) return;
+      if (ty === 'diff' && r.type === '相同') return;
+    }
+    if (kw) {
+      const text = [r.key, r.field, r.v1, r.v2, r.note].join(' ').toLowerCase();
+      if (text.indexOf(kw) < 0) return;
+    }
+    count++;
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td><span class="badge ${badgeMap[r.type] || ''}">${r.type}</span></td>
+      <td>${escHtml(r.key)}</td>
+      <td>${r.row1}</td>
+      <td>${r.row2}</td>
+      <td>${escHtml(r.field)}</td>
+      <td>${escHtml(r.v1)}</td>
+      <td>${escHtml(r.v2)}</td>
+      <td>${escHtml(r.note)}</td>
+    </tr>`;
+  });
+  if (!count) html += '<tr><td colspan="9" style="text-align:center;color:#999;padding:20px">没有符合筛选条件的记录</td></tr>';
+  html += '</tbody></table>';
+  return { html, count };
+}
+
+/* 结果筛选控件 */
+$('resultSearch').addEventListener('input', () => {
+  S.ui.resultSearch = $('resultSearch').value.trim();
+  if (S.result) refreshResultPanes();
+});
+$('resultType').addEventListener('change', () => {
+  S.ui.resultType = $('resultType').value;
+  if (S.result) refreshResultPanes();
+});
+$('sbsDiffOnly').addEventListener('change', () => {
+  S.ui.sbsDiffOnly = $('sbsDiffOnly').checked;
+  if (S.result) refreshResultPanes();
+});
+
+/* Tab 切换 */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['t1', 't2', 'sbs', 'rec'].forEach(k => { $('pane-' + k).hidden = (k !== btn.dataset.tab); });
+  });
+});
+
+/* ===================== 导出 ===================== */
+$('btnExport').addEventListener('click', exportReport);
+
+function exportReport() {
+  if (!S.result) { alert('请先执行比对'); return; }
+  const xml = buildWorkbookXml();
+  const blob = new Blob(['\ufeff' + xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '表格比对报告_' + dateStamp() + '.xls';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function dateStamp() {
+  const d = new Date(); const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function buildWorkbookXml() {
+  const { t1, t2, result } = S;
+  const { marks1, marks2, records, summary } = result;
+
+  const border = '<Borders>' +
+    '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/>' +
+    '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/>' +
+    '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/>' +
+    '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/>' +
+    '</Borders>';
+
+  const styles = `<Styles>
+    <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center" ss:WrapText="1"/>
+      <Font ss:FontName="微软雅黑" ss:Size="10" ss:Color="#000000"/></Style>
+    <Style ss:ID="s_hdr"><Font ss:FontName="微软雅黑" ss:Size="10" ss:Bold="1"/>
+      <Interior ss:Color="#EEF0F7" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/>${border}</Style>
+    <Style ss:ID="s_norm"><Font ss:FontName="微软雅黑" ss:Size="10"/>
+      <Alignment ss:Vertical="Center" ss:WrapText="1"/>${border}</Style>
+    <Style ss:ID="s_same"><Interior ss:Color="#FF00FF" ss:Pattern="Solid"/>
+      <Font ss:FontName="微软雅黑" ss:Size="10" ss:Color="#000000"/><Alignment ss:Vertical="Center" ss:WrapText="1"/>${border}</Style>
+    <Style ss:ID="s_red"><Interior ss:Color="#FF0000" ss:Pattern="Solid"/>
+      <Font ss:FontName="微软雅黑" ss:Size="10" ss:Color="#FFFFFF"/><Alignment ss:Vertical="Center" ss:WrapText="1"/>${border}</Style>
+    <Style ss:ID="s_yellow"><Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>
+      <Font ss:FontName="微软雅黑" ss:Size="10" ss:Color="#000000"/><Alignment ss:Vertical="Center" ss:WrapText="1"/>${border}</Style>
+  </Styles>`;
+
+  const kv = (k, v, style) =>
+    `<Row><Cell ss:StyleID="s_norm"><Data ss:Type="String" xml:space="preserve">${escXml(k)}</Data></Cell>
+      <Cell ss:StyleID="${style || 's_norm'}"><Data ss:Type="String" xml:space="preserve">${escXml(v)}</Data></Cell></Row>`;
+
+  let ws1 = '<Worksheet ss:Name="汇总"><Table><Column ss:Width="200"/><Column ss:Width="240"/>';
+  ws1 += kv('表格1参与行数', String(summary.total1));
+  ws1 += kv('表格2参与行数', String(summary.total2));
+  ws1 += kv('相同行数', String(summary.same), 's_same');
+  ws1 += kv('增加行数（表1比表2多）', String(summary.add), 's_red');
+  ws1 += kv('减少行数（表1比表2少）', String(summary.del), 's_yellow');
+  ws1 += kv('内容变化行数', String(summary.chgRows));
+  ws1 += kv('内容变化单元格数', String(summary.chgCells));
+  ws1 += '<Row/>';
+  ws1 += `<Row><Cell ss:StyleID="s_hdr"><Data ss:Type="String">颜色说明</Data></Cell>
+            <Cell ss:StyleID="s_hdr"><Data ss:Type="String">含义</Data></Cell></Row>`;
+  ws1 += kv('洋红色', '两表相同的非空单元格 / 行', 's_same');
+  ws1 += kv('红色', '表格1比表格2多，或表格1旧值变化', 's_red');
+  ws1 += kv('黄色', '表格2比表格1多（表1减少），或表格2新值变化', 's_yellow');
+  ws1 += kv('无色', '空白单元格一律不染色');
+  ws1 += '</Table></Worksheet>';
+
+  const ws2 = tableSheet('表格1', t1.headers, t1.rows, marks1, 's_red', result.sel1);
+  const ws3 = tableSheet('表格2', t2.headers, t2.rows, marks2, 's_yellow', result.sel2);
+
+  const recHeaders = ['序号', '类型', '主键', '表格1行号', '表格2行号', '字段', '表格1值', '表格2值', '说明'];
+  let ws4 = '<Worksheet ss:Name="记录表"><Table>';
+  ws4 += '<Column ss:Width="50"/><Column ss:Width="60"/><Column ss:Width="140"/><Column ss:Width="75"/><Column ss:Width="75"/>' +
+    '<Column ss:Width="110"/><Column ss:Width="170"/><Column ss:Width="170"/><Column ss:Width="170"/>';
+  ws4 += '<Row>' + recHeaders.map(h =>
+    `<Cell ss:StyleID="s_hdr"><Data ss:Type="String" xml:space="preserve">${escXml(h)}</Data></Cell>`
+  ).join('') + '</Row>';
+  records.forEach((r, i) => {
+    const style = r.type === '增加' ? 's_red' : r.type === '减少' ? 's_yellow' : r.type === '相同' ? 's_same' : 's_norm';
+    const cells = [String(i + 1), r.type, r.key, String(r.row1), String(r.row2), r.field, r.v1, r.v2, r.note];
+    ws4 += '<Row>' + cells.map((c, ci) =>
+      `<Cell ss:StyleID="${ci === 1 ? style : 's_norm'}"><Data ss:Type="String" xml:space="preserve">${escXml(c)}</Data></Cell>`
+    ).join('') + '</Row>';
+  });
+  ws4 += '</Table></Worksheet>';
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">${styles}${ws1}${ws2}${ws3}${ws4}</Workbook>`;
+}
+
+function tableSheet(name, headers, rows, marks, chgStyle, sel) {
+  let xml = `<Worksheet ss:Name="${escXml(name)}"><Table>`;
+  xml += '<Row>' + headers.map(h =>
+    `<Cell ss:StyleID="s_hdr"><Data ss:Type="String" xml:space="preserve">${escXml(h)}</Data></Cell>`
+  ).join('') + '</Row>';
+  rows.forEach((row, ri) => {
+    if (sel && !sel.has(ri)) return;
+    let rowXml = '<Row>';
+    for (let ci = 0; ci < headers.length; ci++) {
+      const m = marks[ri][ci];
+      let style = 's_norm';
+      if (m && norm(row[ci]) !== '') {
+        if (m === 'same') style = 's_same';
+        else if (m === 'add' || m === 'chg') style = chgStyle;
+        else if (m === 'del') style = 's_yellow';
+      }
+      rowXml += `<Cell ss:StyleID="${style}"><Data ss:Type="String" xml:space="preserve">${escXml(row[ci])}</Data></Cell>`;
+    }
+    rowXml += '</Row>';
+    xml += rowXml;
+  });
+  xml += '</Table></Worksheet>';
+  return xml;
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+}
+</script></body>
+</html>
